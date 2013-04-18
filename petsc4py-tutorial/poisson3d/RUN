@@ -1,0 +1,2 @@
+python prog.py -plot_mpl 1
+mpirun python prog.py -plot_mpl 1

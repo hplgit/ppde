@@ -1,0 +1,23 @@
+# -*- makefile -*-
+
+EXECUTABLE=poisson3d
+
+.PHONY:all
+all: ${EXECUTABLE}.exe
+
+SOURCEC=${EXECUTABLE}.c
+OBJSC=${EXECUTABLE}.o
+
+SOURCEF=del2lib.f90
+OBJSF=del2lib.o
+
+SOURCEH=del2mat.h
+
+${EXECUTABLE}.exe: ${SOURCEC} ${SOURCEF} ${SOURCEH}
+	-${PETSC_FCOMPILE}
+	-${PETSC_COMPILE}
+	-${CLINKER} -o $@ ${PETSC_TS_LIB} ${OBJSC} ${OBJSF}
+	-${RM} ${OBJSC} ${OBJSF}
+
+include ${PETSC_DIR}/conf/variables
+include ${PETSC_DIR}/conf/rules

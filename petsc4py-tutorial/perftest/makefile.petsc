@@ -1,0 +1,21 @@
+# -*- makefile -*-
+
+EXECUTABLE=driver
+
+.PHONY:all
+all: ${EXECUTABLE}.exe
+
+SOURCEC=${EXECUTABLE}.c
+OBJSC=${EXECUTABLE}.o
+
+SOURCEF=App.f90
+OBJSF=App.o
+
+${EXECUTABLE}.exe: ${SOURCEC} ${SOURCEF}
+	-${PETSC_FCOMPILE}
+	-${PETSC_COMPILE}
+	-${CLINKER} -o $@ ${PETSC_TS_LIB} ${OBJSC} ${OBJSF}
+	-${RM} ${OBJSC} ${OBJSF}
+
+include ${PETSC_DIR}/conf/variables
+include ${PETSC_DIR}/conf/rules
