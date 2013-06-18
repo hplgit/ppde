@@ -1,0 +1,176 @@
+TITLE: Parallelizing PDE solvers in Python with aid of petsc4py
+AUTHOR: Christoffer Stausland at Department of Physics, University of Oslo
+AUTHOR: Hans Petter Langtangen at Center for Biomedical Computing, Simula Research Laboratory and Department of Informatics, University of Oslo
+AUTHOR: Xing Cai at Center for Biomedical Computing, Simula Research Laboratory and Department of Informatics, University of Oslo
+DATE: today
+
+__Abstract.__
+This tutorial shows how to use `petsc4py` to easily go from a serial Python
+PDE solver, potentially combined a Fortran, C, or C++ kernel for
+the core numerics, to a parallel implementation.
+
+======= PETSc and petsc4py =======
+
+PETSc is a widely used library for doing operations on vectors and
+matrices, including solving linear and nonlinear systems of algebraic
+equations. The great advantage of PETSc is that the package simplies
+parallel programming and yet achieves very high performance on
+parallel computing platforms.
+
+The `petsc4py` package is a Python interface to PETSc, which makes it
+easy to parallelize vector and matrix operations, as well as linear and
+nonlinear systems solution, in Python programs.
+
+===== Parallelizing integration =====
+
+The first computational task is to evaluate an integral by
+the Trapezoidal method:
+
+!bt
+\[ I = \int_a^b f(x)dx \approx \Delta x\left(\frac{1}{2}f(a) +
+\frac{1}{2}f(b) + \sum_{j=1}^{N_x-1} f(a+j\Delta x)\right),\]
+!et
+where $\Delta x$ is the spacing between the $N_x+1$ evaluation (mesh) points:
+$\Delta x = (b-a)/N_x$.
+
+The relevant vectorized Python code becomes
+
+!bc pycod
+import numpy as np
+x = np.linspace(0, L, Nx+1)  # mesh
+dx = x[1] - x[0]
+f_values = f(x)
+# Adjust weight at the end points
+f_values[0] /= 2.
+f_values[-1] /= 2.
+I = dx*np.sum(f_values)
+!ec
+
+We now divide the mesh points among the processors.
+Each processor must sum its function values. The processors holding
+the first and last mesh points needs to adjust the function value
+at these points by a factor of one half. The one or all processors
+must collect the partial sums and form the final sum.
+
+
+===== Parallelizing differentiation =====
+
+Given discrete values $f(x_i)$ of a function $f(x)$ at mesh points
+$x_i=i\Delta x$, $i=0,\ldots,N_x$, we want to approximate
+the derivative $df/dx$ at the interior mesh points, $f'(x_i)$,
+$i=1,\ldots,N_x-1$, by a
+finite difference:
+
+!bt
+\[ f'(x_i) = \frac{f(x_{i+1}) - f(x_{i-1})}{2\Delta x}\]
+!et
+
+This is easy in NumPy:
+
+!bc pycod
+import numpy as np
+x = np.linspace(0, L, Nx+1)  # mesh
+dx = x[1] - x[0]
+f_values = f(x)
+dfdx = (f_values[1:] - f_values[:-1])/(2*dx)
+!ec
+
+Assume $N_x$ is large and that we divide the mesh among processors.
+Think of $N_x=10$ and three processors: processor 0 has $x_0$, $x_1$, $x_2$;
+processor 1 has $x_3$, $x_4$, $x_5$; and processor 2 has the rest, $x_6$, $x_7$,
+$x_8$, $x_9$, and $x_{10}$. To compute the derivative at the three
+points on processor 1 we need to access $x_2$ and $x_6$. We add these
+*ghost points* to the set of local mesh points on this processor.
+The other processors must also make use of ghost points.
+
+
+======= Explicit finite difference schemes =======
+
+===== The mathematical model and numerical method =====
+
+We turn our attention to PDE solvers that arise from explicit
+finite difference schemes. A natural starting point is
+the 1D wave equation problem
+
+!bt
+\begin{align}
+\frac{\partial^2 u}{\partial t^2} &=
+c^2 \frac{\partial^2 u}{\partial x^2}, \quad x\in (0,L),\ t\in (0,T]
+label{wave:pde1}\\
+u(x,0) &= I(x), \quad x\in [0,L]
+label{wave:pde1:ic:u}\\
+\frac{\partial}{\partial t}u(x,0) &= 0, \quad x\in [0,L]
+label{wave:pde1:ic:ut}\\
+u(0,t) & = 0, \quad  t\in (0,T],
+label{wave:pde1:bc:0}\\
+u(L,t) & = 0, \quad  t\in (0,T]
+\thinspace . label{wave:pde1:bc:L}
+\end{align}
+!et
+for a given constant wave velocity
+$c$ and an initial shape $I(x)$ of the wave.
+
+A finite difference scheme for this problem, based on 2nd-order
+finite difference approximations to the second-order derivatives
+reads
+
+!bt
+\begin{align}
+u^0_i &= I(x_i),
+label{wave:pde1:scheme0}\\
+u_i^1 &= u^0_i - \frac{1}{2}
+C^2\left(u^{n}_{i+1}-2u^{n}_{i} + u^{n}_{i-1}\right),
+label{wave:pde1:scheme1}\\
+u^{n+1}_i &= -u^{n-1}_i + 2u^n_i + C^2
+\left(u^{n}_{i+1}-2u^{n}_{i} + u^{n}_{i-1}\right),
+label{wave:pde1:scheme}
+\end{align}
+!et
+valid for $i=1,\ldots,N_x-1$ and $n=1,2,\ldots,N-1$.
+The mesh function $u^n_i$ is the approximation to the solution
+at mesh point $x_i$
+in the spatial domain $[0,L]$ and mesh point $t_n$ in the temporal
+domain $[0,T]$. Specifically,
+
+!bt
+\[ x_i = i\Delta x,\quad t_n = n\Delta t,\]
+!et
+where
+
+!bt
+\[ \Delta x = \frac{L}{N_x},\quad \Delta t = \frac{T}{N},\]
+!et
+are the mesh discretization parameters.
+The parameter
+
+!bt
+\begin{equation}
+C = c\frac{\Delta t}{\Delta x}
+\end{equation}
+!et
+is the dimensionless Courant number, and stability of the
+computational schemce requires $C\leq 1$.
+
+The computational algorithm consists in simple loops over the spatial
+points, more precisely
+
+ o Compute (ref{wave:pde1:scheme0}) for $i=0,\ldots,N_x$.
+
+===== A petsc4py implementation =====
+
+======= Implicit finite difference schemes =======
+
+ * Start with 1D diffusion equation and Backward Euler
+ * Tridiagonal or banded matrix
+ * Do it in petsc4py
+ * Extend to 2D (nontrivial to build the matrix right)
+
+===== Codes =====
+
+`diffu1D_v1.py`
+
+@@@CODE src-petsc4py/diffu1D_v1.py
+
+`diffu1D_vc.py`
+
+@@@CODE src-petsc4py/diffu1D_vc.py
