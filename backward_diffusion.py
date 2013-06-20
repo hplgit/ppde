@@ -107,21 +107,15 @@ if plotting:
 			'the results will not be plotted'
 		plotting = False
 
-outputToFile = True
+outputToFile = False
 if outputToFile:
 	W = PETSc.Viewer().createASCII('test.txt',format=0)
 	unm1.view(W)
 
 # Now solve each time step sequentially
 for t in range(Nt):
-	# Calculate RHS (b): T*un = b = D*unm1. Since D in this example is the
-	# identity matrix, b=unm1
-	#D.mult(unm1,b)
-	unm1.copy(b)
-	
-	# Then run the solver. T is presetup and constant. 'un' and 'b'
-	# is the only thing that changes for each time step
-	ksp.solve(b,un)
+	# Run the solver. T is presetup and constant.
+	ksp.solve(unm1,un)
 	
 	# Update unm1 to the new one, then we're ready for another timestep
 	un.copy(unm1)
