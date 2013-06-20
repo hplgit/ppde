@@ -35,11 +35,11 @@ print 'Running with', n,'spatial points and',Nt,'time steps'
 a_from = 0; b_to = 1; dx = (b_to-a_from)/(n-1.);
 C = 100*dx**2/(dx**2)    # C = dt/dx^2
 
-# Need our two matrices. One tridiag and one diag of size n-by-n. These
-# matrices are sparse by nature, so we use the default PETSc format AIJ
-# which is sparse. One should (not must) preallocate the number of data
-# points using nnz. For a tridiagonal matrix nnz=3 and for a diagonal
-# matrix nnz=1. nnz is approx. number of elements per row.
+# Need our tridiagonal matrix. That matrix are sparse by nature, so we
+# use the default PETSc format AIJ which is sparse. One should (not
+# must) preallocate the number of data points using nnz. For a
+# tridiagonal matrix nnz=3 and for a diagonal matrix nnz=1. nnz is
+# approx. number of elements per row.
 T = PETSc.Mat().createAIJ([n, n],nnz=3)
 for i in range(1, n):   # filling the diagonal and off-diagonal entries
 	T.setValue(i,i,1.+2*C)
