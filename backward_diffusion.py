@@ -49,8 +49,7 @@ for i in range(1, n):   # filling the diagonal and off-diagonal entries
 T.setValue(0,0,1); T.setValue(0,1,0);
 T.setValue(n-1,n-1,1); T.setValue(n-1,n-2,0);
 
-# Create the to vectors, we need two of them (new and old). We're also
-# making a temporary RHS-array b
+# Create the two vectors, we need two of them (new and old).
 un = PETSc.Vec().createSeq(n)
 unm1 = PETSc.Vec().createSeq(n)
 
@@ -60,7 +59,7 @@ unm1 = PETSc.Vec().createSeq(n)
 unm1.setValues(range(n),numpy.linspace(a_from,b_to,n))
 unm1.setValue(0,0); unm1.setValue(n-1,0);
 
-# Assemble all vectors and matrices. (Is all of this necesarry?)
+# Assemble all vectors and matrices.
 un.assemblyBegin()
 un.assemblyEnd()
 unm1.assemblyBegin()
@@ -70,7 +69,7 @@ T.assemblyEnd()
 
 
 # Set up a solver. Using conjugate gradient (cg) for now (iterative),
-# and incomplete Cholesky (icc) as preconditioner
+# and incomplete Cholesky (icc) as preconditioner.
 '''
 ksp = PETSc.KSP()
 ksp.create()
