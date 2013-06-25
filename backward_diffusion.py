@@ -6,9 +6,10 @@
 # equation is
 # 		du/dt = d2u/dx2.
 # 
-# The initial condition used here is exp(x = -100:100), but this can
-# easily be replaced by any function. The boundary conditions is 0 at
-# both ends.
+# We get a system A*un=unm1 where un is the new solution, unm1 is the
+# solution at the last time step and A is a tridiagonal matrix.
+# 
+# This is unconditionally stable.
 # 
 # ------------------------------------------------------------------------
 
@@ -29,11 +30,12 @@ if (len(sys.argv) > 2):
 else:
 	Nt = 100
 
-print 'Running with', n,'spatial points and',Nt,'time steps'
+if PETSc.COMM_WORLD.getRank() == 0:
+	print 'Running with', n,'spatial points and',Nt,'time steps'
 
 
-a_from = 0; b_to = 1; dx = (b_to-a_from)/(n-1.);
-C = 100*dx**2/(dx**2)    # C = dt/dx^2
+a_from = 0; b_to = 1; dx = (b_to-a_from)/(n-1.); dt = 100*dx**2
+C = dt/(dx**2)    # C = dt/dx^2
 
 # Need our tridiagonal matrix. That matrix are sparse by nature, so we
 # use the default PETSc format AIJ which is sparse. One should (not
@@ -45,7 +47,7 @@ for i in range(1, n):   # filling the diagonal and off-diagonal entries
 	T.setValue(i,i,1.+2*C)
 	T.setValue(i-1,i,-C)
 	T.setValue(i,i-1,-C)
-# For boundary conditions
+# For boundary conditions 0
 T.setValue(0,0,1); T.setValue(0,1,0);
 T.setValue(n-1,n-1,1); T.setValue(n-1,n-2,0);
 
@@ -53,24 +55,20 @@ T.setValue(n-1,n-1,1); T.setValue(n-1,n-2,0);
 un = PETSc.Vec().createSeq(n)
 unm1 = PETSc.Vec().createSeq(n)
 
-# The inital condition is an exponential or sine for now
-#unm1.setValues(range(n),numpy.exp(-numpy.square(numpy.linspace(a_from,b_to,n)-0.5*(b_to-a_from))*50))
+# The inital condition is an exponential, sine or linear (remember end points)
+unm1.setValues(range(n),numpy.exp(-numpy.square(numpy.linspace(a_from,b_to,n)-0.5*(b_to-a_from))*50))
 #unm1.setValues(range(n),numpy.sin(numpy.linspace(a_from,b_to,n)*2*numpy.pi))
-unm1.setValues(range(n),numpy.linspace(a_from,b_to,n))
+#unm1.setValues(range(n),numpy.linspace(a_from,b_to,n))
 unm1.setValue(0,0); unm1.setValue(n-1,0);
 
 # Assemble all vectors and matrices.
-un.assemblyBegin()
-un.assemblyEnd()
-unm1.assemblyBegin()
-unm1.assemblyEnd()
-T.assemblyBegin()
-T.assemblyEnd()
+un.assemblyBegin(); un.assemblyEnd()
+unm1.assemblyBegin(); unm1.assemblyEnd()
+T.assemblyBegin(); T.assemblyEnd()
 
-
+'''
 # Set up a solver. Using conjugate gradient (cg) for now (iterative),
 # and incomplete Cholesky (icc) as preconditioner.
-'''
 ksp = PETSc.KSP()
 ksp.create()
 ksp.setType('cg')             # Setting solver type
@@ -95,7 +93,7 @@ ksp.setOperators(T)           # Set which matrix to solve the problem with
 
 
 plotting = False
-# Importing plotting tool
+# Importing plotting tool (correct use?)
 if plotting:
 	try:
 		from matplotlib import pylab
@@ -118,6 +116,8 @@ for t in range(Nt):
 	
 	# Update unm1 to the new one, then we're ready for another timestep
 	un.copy(unm1)
+	
+	# Boundary conditions
 	unm1.setValue(0,0); unm1.setValue(n-1,0);
 	
 	# Is this the correct use? (Matlab style)
@@ -128,7 +128,8 @@ for t in range(Nt):
 	if outputToFile:
 		un.view(W)
 
-print 'Done with', Nt, 'timesteps'
+if PETSc.COMM_WORLD.getRank() == 0:
+	print 'Done with', Nt, 'timesteps'
 
 
 

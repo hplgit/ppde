@@ -38,11 +38,11 @@ if (len(sys.argv) > 2):
 else:
 	Nt = 100
 
-	
-print 'Running with', n,'spatial points and',Nt,'time steps'
+if PETSc.COMM_WORLD.getRank() == 0:
+	print 'Running with', n,'spatial points and',Nt,'time steps'
 
-a_from = 0; b_to = 1; dx = (b_to-a_from)/(n-1.);
-C = 0.01*dx**2/(dx**2)    # C = dt/dx^2, remember the Courant condition
+a_from = 0; b_to = 1; dx = (b_to-a_from)/(n-1.); dt = 0.01*dx**2
+C = dt/(dx**2)    # C = dt/dx^2, remember the Courant condition
 
 # Need the tridiagonal matrix of the right hand side. That matrix are
 # sparse by nature, so we use the default PETSc format AIJ which is
@@ -54,7 +54,7 @@ for i in range(1, n):   # filling the diagonal and off-diagonal entries
 	T.setValue(i,i,1.-2*C)
 	T.setValue(i-1,i,C)
 	T.setValue(i,i-1,C)
-# For boundary conditions
+# For boundary conditions 0
 T.setValue(0,0,1); T.setValue(0,1,0);
 T.setValue(n-1,n-1,1); T.setValue(n-1,n-2,0);
 
@@ -70,13 +70,9 @@ unm1.setValue(0,0); unm1.setValue(n-1,0);
 
 
 # Assemble all vectors and matrices.
-un.assemblyBegin()
-un.assemblyEnd()
-unm1.assemblyBegin()
-unm1.assemblyEnd()
-T.assemblyBegin()
-T.assemblyEnd()
-
+un.assemblyBegin(); un.assemblyEnd()
+unm1.assemblyBegin(); unm1.assemblyEnd()
+T.assemblyBegin(); T.assemblyEnd()
 
 plotting = False
 # Importing plotting tool
@@ -91,15 +87,14 @@ if plotting:
 		plotting = False
 
 # Writing output to file.
-outputToFile = True
+outputToFile = False
 if outputToFile:
 	W = PETSc.Viewer().createASCII('test.txt',format=1)
 	unm1.view(W)
 
-
 # Now solve each time step sequentially
 for t in range(Nt):
-	# Multiply last vector with the tridiagonal vector
+	# Multiply last vector with the tridiagonal matrix
 	T.mult(unm1, un)
 	
 	# Update unm1 to the new one, then we're ready for another timestep
@@ -114,4 +109,5 @@ for t in range(Nt):
 	if outputToFile:
 		un.view(W)
 
-print 'Done with', Nt, 'timesteps'
+if PETSc.COMM_WORLD.getRank() == 0:
+	print 'Done with', Nt, 'timesteps'

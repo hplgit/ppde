@@ -3,7 +3,7 @@
 # Integration with the trapezoidal rule
 # http://en.wikipedia.org/wiki/Trapezoidal_rule
 # 
-# I(f) = h*(0.5*f[0] + sum_of_f_array_without_endpoits + 0.5*f[-1]
+# I(f) = h*(0.5*f[0] + sum_of_f_array_without_endpoits + 0.5*f[-1]    (1)
 #	Where
 #		* h is the step length (b-a)/(N-1)
 #		* f[0] is the start point and f[-1] is the last point
@@ -25,8 +25,6 @@ def trapes_rule(h, f):
 	#Pf = PETSc.Vec().createSeq(f.size-2)
 	Pf = PETSc.Vec().createMPI(f.size-2,comm=PETSc.COMM_WORLD)
 	Pf.setValues(range(f.size-2), f[1:-1])
-	
-	print PETSc.COMM_WORLD.getSize()
 	
 	# Integrate using (1)
 	integ = h*(Pf.sum() + 0.5*f[0] + 0.5*f[-1])
