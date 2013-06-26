@@ -14,7 +14,7 @@
 
 import petsc4py
 import sys
-from matplotlib import pylab
+#from matplotlib import pylab
 petsc4py.init(sys.argv)
 from petsc4py import PETSc
 
