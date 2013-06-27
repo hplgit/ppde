@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<!--
+Automatically generated HTML file from Doconce source
+(http://code.google.com/p/doconce/)
+-->
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="Doconce: http://code.google.com/p/doconce/" />
+<meta name="description" content="Parallelizing PDE solvers in Python with aid of petsc4py">
+
+
+
+<style type="text/css">
+    /* Color definitions:  http://www.december.com/html/spec/color0.html
+       CSS examples:       http://www.w3schools.com/css/css_examples.asp */
+
+    body {
+      margin-top: 1.0em;
+      background-color: #ffffff;
+      font-family: Helvetica, Arial, FreeSans, san-serif;
+      color: #000000;
+    }
+    h1 { font-size: 1.8em; color: #1e36ce; }
+    h2 { font-size: 1.5em; color: #1e36ce; }
+    h3 { color: #1e36ce; }
+    a { color: #1e36ce; text-decoration:none; }
+    tt { font-family: "Courier New", Courier; }
+    
+    p { text-indent: 0px; }
+    hr { border: 0; width: 80%; border-bottom: 1px solid #aaa}
+    p.caption { width: 80%; font-style: normal; text-align: left; }
+    hr.figure { border: 0; width: 80%; border-bottom: 1px solid #aaa}
+
+</style>
+
+</head>
+
+<!-- tocinfo
+{'highest level': 1,
+ 'sections': [(' PETSc and petsc4py ', 1, None, '___sec0'),
+              (' Parallelizing integration ', 2, None, '___sec1'),
+              (' Parallelizing differentiation ', 2, None, '___sec2'),
+              (' Explicit finite difference schemes ', 1, None, '___sec3'),
+              (' The mathematical model and numerical method ',
+               2,
+               None,
+               '___sec4'),
+              (' A petsc4py implementation ', 2, None, '___sec5'),
+              (' Implicit finite difference schemes ', 1, None, '___sec6'),
+              (' Codes ', 2, None, '___sec7')]}
+end of tocinfo -->
+
+<body>
+
+
+
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+  TeX: {
+     equationNumbers: {  autoNumber: "AMS"  },
+     extensions: ["AMSmath.js", "AMSsymbols.js", "autobold.js"]
+  }
+});
+</script>
+<script type="text/javascript"
+ src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+</script>
+<!-- Fix slow MathJax rendering in IE8 -->
+<meta http-equiv="X-UA-Compatible" content="IE=EmulateIE7">
+
+
+
+
+    
+<!-- ------------------- main content ---------------------- -->
+
+
+<title>Parallelizing PDE solvers in Python with aid of petsc4py</title>
+
+<center><h1>Parallelizing PDE solvers in Python with aid of petsc4py</h1></center>  <!-- document title -->
+
+<p>
+<!-- author(s): Christoffer Stausland, Hans Petter Langtangen, and Xing Cai -->
+
+<center>
+<b>Christoffer Stausland</b> [1]
+</center>
+
+<center>
+<b>Hans Petter Langtangen</b> [2, 3]
+</center>
+
+<center>
+<b>Xing Cai</b> [2, 3]
+</center>
+
+
+<p>
+<!-- institution(s) -->
+
+<center>[1] <b>Department of Physics, University of Oslo</b></center>
+<center>[2] <b>Center for Biomedical Computing, Simula Research Laboratory</b></center>
+<center>[3] <b>Department of Informatics, University of Oslo</b></center>
+<p>
+<center><h4>Jun 27, 2013</h4></center> <!-- date -->
+<p>
+<b>Abstract.</b> This tutorial shows how to use <code>petsc4py</code> to easily go from a serial Python
+PDE solver, potentially combined a Fortran, C, or C++ kernel for
+the core numerics, to a parallel implementation.
+
+<h2>PETSc and petsc4py  <a name="___sec0"></a></h2>
+
+<p>
+PETSc is a widely used library for doing operations on vectors and
+matrices, including solving linear and nonlinear systems of algebraic
+equations. The great advantage of PETSc is that the package simplies
+parallel programming and yet achieves very high performance on
+parallel computing platforms.
+
+<p>
+The <code>petsc4py</code> package is a Python interface to PETSc, which makes it
+easy to parallelize vector and matrix operations, as well as linear and
+nonlinear systems solution, in Python programs.
+
+<h3>Parallelizing integration  <a name="___sec1"></a></h3>
+
+<p>
+The first computational task is to evaluate an integral by
+the Trapezoidal method:
+
+<p>
+$$ I = \int_a^b f(x)dx \approx \Delta x\left(\frac{1}{2}f(a) +
+\frac{1}{2}f(b) + \sum_{j=1}^{N_x-1} f(a+j\Delta x)\right),$$
+
+where \( \Delta x \) is the spacing between the \( N_x+1 \) evaluation (mesh) points:
+\( \Delta x = (b-a)/N_x \).
+
+<p>
+The relevant vectorized Python code becomes
+
+<p>
+
+<!-- code=python (from !bc pycod) typeset with pygments style "default" -->
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">trapezoidal_vec</span>(f, a, b, n):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Compute the integral of f from a to b with n intervals,</span>
+<span style="color: #BA2121; font-style: italic">    using the Trapezoidal rule. Vectorized version.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    x <span style="color: #666666">=</span> np<span style="color: #666666">.</span>linspace(a, b, n<span style="color: #666666">+1</span>)
+    f_vec <span style="color: #666666">=</span> f(x)
+    f_vec[<span style="color: #666666">0</span>] <span style="color: #666666">/=</span> <span style="color: #666666">2.0</span>
+    f_vec[<span style="color: #666666">-1</span>] <span style="color: #666666">/=</span> <span style="color: #666666">2.0</span>
+    h <span style="color: #666666">=</span> (b<span style="color: #666666">-</span>a)<span style="color: #666666">/</span><span style="color: #008000">float</span>(n)
+    I <span style="color: #666666">=</span> h<span style="color: #666666">*</span>np<span style="color: #666666">.</span>sum(f_vec)
+    <span style="color: #008000; font-weight: bold">return</span> I
+</pre></div>
+<p>
+We now divide the mesh points among the processors.
+Each processor must sum its function values. The processors holding
+the first and last mesh points needs to adjust the function value
+at these points by a factor of one half. The one or all processors
+must collect the partial sums and form the final sum.
+
+<h3>Parallelizing differentiation  <a name="___sec2"></a></h3>
+
+<p>
+Given discrete values \( f(x_i) \) of a function \( f(x) \) at mesh points
+\( x_i=i\Delta x \), \( i=0,\ldots,N_x \), we want to approximate
+the derivative \( df/dx \) at the interior mesh points, \( f'(x_i) \),
+\( i=1,\ldots,N_x-1 \), by a centered
+finite difference:
+
+<p>
+$$ f'(x_i) = \frac{f(x_{i+1}) - f(x_{i-1})}{2\Delta x}.$$
+
+At the end points we use one-sided differences:
+
+<p>
+$$ f'(x_0) = \frac{f(x_{1}) - f(x_{0})}{\Delta x},
+\quad f'(x_{N_x}) = \frac{f(x_{N_x}) - f(x_{N_x-1})}{\Delta x} .$$
+
+
+<p>
+This is easily done in NumPy:
+
+<p>
+
+<!-- code=python (from !bc pycod) typeset with pygments style "default" -->
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">differentiate_vec</span>(f, a, b, n):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Compute the discrete derivative of a Python function</span>
+<span style="color: #BA2121; font-style: italic">    f on [a,b] using n intervals. Internal points apply</span>
+<span style="color: #BA2121; font-style: italic">    a centered difference, while end points apply a one-sided</span>
+<span style="color: #BA2121; font-style: italic">    difference. Vectorized version.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    x <span style="color: #666666">=</span> np<span style="color: #666666">.</span>linspace(a, b, n<span style="color: #666666">+1</span>)  <span style="color: #408080; font-style: italic"># mesh</span>
+    df <span style="color: #666666">=</span> np<span style="color: #666666">.</span>zeros_like(x)       <span style="color: #408080; font-style: italic"># df/dx</span>
+    f_vec <span style="color: #666666">=</span> f(x)
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]
+    <span style="color: #408080; font-style: italic"># Internal mesh points</span>
+    df[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> (f_vec[<span style="color: #666666">2</span>:] <span style="color: #666666">-</span> f_vec[:<span style="color: #666666">-2</span>])<span style="color: #666666">/</span>(<span style="color: #666666">2*</span>dx)
+    <span style="color: #408080; font-style: italic"># End points</span>
+    df[<span style="color: #666666">0</span>]  <span style="color: #666666">=</span> (f_vec[<span style="color: #666666">1</span>]  <span style="color: #666666">-</span> f_vec[<span style="color: #666666">0</span>]) <span style="color: #666666">/</span>dx
+    df[<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> (f_vec[<span style="color: #666666">-1</span>] <span style="color: #666666">-</span> f_vec[<span style="color: #666666">-2</span>])<span style="color: #666666">/</span>dx
+    <span style="color: #008000; font-weight: bold">return</span> df
+</pre></div>
+<p>
+Assume \( N_x \) is large and that we divide the mesh among processors.
+Think of \( N_x=10 \) and three processors: processor 0 has \( x_0 \), \( x_1 \), \( x_2 \);
+processor 1 has \( x_3 \), \( x_4 \), \( x_5 \); and processor 2 has the rest, \( x_6 \), \( x_7 \),
+\( x_8 \), \( x_9 \), and \( x_{10} \). To compute the derivative at the three
+points on processor 1 we need to access \( x_2 \) and \( x_6 \). We add these
+<em>ghost points</em> to the set of local mesh points on this processor.
+The other processors must also make use of ghost points.
+
+<h2>Explicit finite difference schemes  <a name="___sec3"></a></h2>
+
+<h3>The mathematical model and numerical method  <a name="___sec4"></a></h3>
+
+<p>
+We turn our attention to PDE solvers that arise from explicit
+finite difference schemes. A natural starting point is
+the 1D wave equation problem
+
+<p>
+$$
+\begin{align}
+\frac{\partial^2 u}{\partial t^2} &=
+c^2 \frac{\partial^2 u}{\partial x^2}, \quad x\in (0,L),\ t\in (0,T]
+\label{wave:pde1}\\
+u(x,0) &= I(x), \quad x\in [0,L]
+\label{wave:pde1:ic:u}\\
+\frac{\partial}{\partial t}u(x,0) &= 0, \quad x\in [0,L]
+\label{wave:pde1:ic:ut}\\
+u(0,t) & = 0, \quad  t\in (0,T],
+\label{wave:pde1:bc:0}\\
+u(L,t) & = 0, \quad  t\in (0,T]
+\thinspace . \label{wave:pde1:bc:L}
+\end{align}
+$$
+
+for a given constant wave velocity
+\( c \) and an initial shape \( I(x) \) of the wave.
+
+<p>
+A finite difference scheme for this problem, based on 2nd-order
+finite difference approximations to the second-order derivatives
+reads
+
+<p>
+$$
+\begin{align}
+u^0_i &= I(x_i),
+\label{wave:pde1:scheme0}\\
+u_i^1 &= u^0_i - \frac{1}{2}
+C^2\left(u^{n}_{i+1}-2u^{n}_{i} + u^{n}_{i-1}\right),
+\label{wave:pde1:scheme1}\\
+u^{n+1}_i &= -u^{n-1}_i + 2u^n_i + C^2
+\left(u^{n}_{i+1}-2u^{n}_{i} + u^{n}_{i-1}\right),
+\label{wave:pde1:scheme}
+\end{align}
+$$
+
+valid for \( i=1,\ldots,N_x-1 \) and \( n=1,2,\ldots,N-1 \).
+The mesh function \( u^n_i \) is the approximation to the solution
+at mesh point \( x_i \)
+in the spatial domain \( [0,L] \) and mesh point \( t_n \) in the temporal
+domain \( [0,T] \). Specifically,
+
+<p>
+$$ x_i = i\Delta x,\quad t_n = n\Delta t,$$
+
+where
+
+<p>
+$$ \Delta x = \frac{L}{N_x},\quad \Delta t = \frac{T}{N},$$
+
+are the mesh discretization parameters.
+The parameter
+
+<p>
+$$
+\begin{equation}
+C = c\frac{\Delta t}{\Delta x}
+\end{equation}
+$$
+
+is the dimensionless Courant number, and stability of the
+computational schemce requires \( C\leq 1 \).
+
+<p>
+The computational algorithm consists in simple loops over the spatial
+points, more precisely
+
+<p>
+
+<ol>
+<li> Compute \eqref{wave:pde1:scheme0} for \( i=0,\ldots,N_x \).</li>
+</ol>
+
+<h3>A petsc4py implementation  <a name="___sec5"></a></h3>
+
+<h2>Implicit finite difference schemes  <a name="___sec6"></a></h2>
+
+<p>
+
+<ul>
+ <li> Start with 1D diffusion equation and Backward Euler</li>
+ <li> Tridiagonal or banded matrix</li>
+ <li> Do it in petsc4py</li>
+ <li> Extend to 2D (nontrivial to build the matrix right)</li>
+</ul>
+
+<h3>Codes  <a name="___sec7"></a></h3>
+
+<p>
+<code>diffu1D_v1.py</code>
+
+<p>
+
+<!-- code=python (from !bc pypro) typeset with pygments style "default" -->
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #408080; font-style: italic">#!/usr/bin/env python</span>
+<span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">Functions for solving a 1D diffusion equations of simplest types</span>
+<span style="color: #BA2121; font-style: italic">(constant coefficient, no source term):</span>
+
+<span style="color: #BA2121; font-style: italic">      u_t = a*u_xx on (0,L)</span>
+
+<span style="color: #BA2121; font-style: italic">with boundary conditions u=0 on x=0,L, for t in (0,T].</span>
+<span style="color: #BA2121; font-style: italic">Initial condition: u(x,0)=I(x).</span>
+
+<span style="color: #BA2121; font-style: italic">The following naming convention of variables are used.</span>
+
+<span style="color: #BA2121; font-style: italic">===== ==========================================================</span>
+<span style="color: #BA2121; font-style: italic">Name  Description</span>
+<span style="color: #BA2121; font-style: italic">===== ==========================================================</span>
+<span style="color: #BA2121; font-style: italic">Nx    The total number of mesh cells; mesh points are numbered</span>
+<span style="color: #BA2121; font-style: italic">      from 0 to Nx.</span>
+<span style="color: #BA2121; font-style: italic">C     The dimensionless number a*dt/dx**2, which implicitly</span>
+<span style="color: #BA2121; font-style: italic">      specifies the time step.</span>
+<span style="color: #BA2121; font-style: italic">T     The stop time for the simulation.</span>
+<span style="color: #BA2121; font-style: italic">I     Initial condition (Python function of x).</span>
+<span style="color: #BA2121; font-style: italic">a     Variable coefficient (constant).</span>
+<span style="color: #BA2121; font-style: italic">L     Length of the domain ([0,L]).</span>
+<span style="color: #BA2121; font-style: italic">x     Mesh points in space.</span>
+<span style="color: #BA2121; font-style: italic">t     Mesh points in time.</span>
+<span style="color: #BA2121; font-style: italic">n     Index counter in time.</span>
+<span style="color: #BA2121; font-style: italic">u     Unknown at current/new time level.</span>
+<span style="color: #BA2121; font-style: italic">u_1   u at the previous time level.</span>
+<span style="color: #BA2121; font-style: italic">dx    Constant mesh spacing in x.</span>
+<span style="color: #BA2121; font-style: italic">dt    Constant mesh spacing in t.</span>
+<span style="color: #BA2121; font-style: italic">===== ==========================================================</span>
+
+<span style="color: #BA2121; font-style: italic">user_action is a function of (u, x, t, n), u[i] is the solution at</span>
+<span style="color: #BA2121; font-style: italic">spatial mesh point x[i] at time t[n], where the calling code</span>
+<span style="color: #BA2121; font-style: italic">can add visualization, error computations, data analysis,</span>
+<span style="color: #BA2121; font-style: italic">store solutions, etc.</span>
+<span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">scipy.sparse</span> <span style="color: #008000; font-weight: bold">import</span> spdiags
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">scipy.sparse.linalg</span> <span style="color: #008000; font-weight: bold">import</span> spsolve, use_solver
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">solver_FE_simple</span>(I, a, L, Nx, C, T):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Simplest expression of the computational algorithm</span>
+<span style="color: #BA2121; font-style: italic">    using the Forward Euler method and explicit Python loops.</span>
+<span style="color: #BA2121; font-style: italic">    For this method C &lt;= 0.5 for stability.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    x <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, L, Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in space</span>
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]
+    dt <span style="color: #666666">=</span> C<span style="color: #666666">*</span>dx<span style="color: #666666">**2/</span>a
+    Nt <span style="color: #666666">=</span> <span style="color: #008000">int</span>(<span style="color: #008000">round</span>(T<span style="color: #666666">/</span><span style="color: #008000">float</span>(dt)))
+    t <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, T, Nt<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in time</span>
+    u   <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    u_1 <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+
+    <span style="color: #408080; font-style: italic"># Set initial condition u(x,0) = I(x)</span>
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nx<span style="color: #666666">+1</span>):
+        u_1[i] <span style="color: #666666">=</span> I(x[i])
+
+    <span style="color: #008000; font-weight: bold">for</span> n <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nt):
+        <span style="color: #408080; font-style: italic"># Compute u at inner mesh points</span>
+        <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">1</span>, Nx):
+            u[i] <span style="color: #666666">=</span> u_1[i] <span style="color: #666666">+</span> C<span style="color: #666666">*</span>(u_1[i<span style="color: #666666">-1</span>] <span style="color: #666666">-</span> <span style="color: #666666">2*</span>u_1[i] <span style="color: #666666">+</span> u_1[i<span style="color: #666666">+1</span>])
+
+        <span style="color: #408080; font-style: italic"># Insert boundary conditions</span>
+        u[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> <span style="color: #666666">0</span>;  u[Nx] <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+
+        <span style="color: #408080; font-style: italic"># Switch variables before next step</span>
+        u_1, u <span style="color: #666666">=</span> u, u_1
+    <span style="color: #008000; font-weight: bold">return</span> u
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">solver_FE</span>(I, a, L, Nx, C, T,
+              user_action<span style="color: #666666">=</span><span style="color: #008000">None</span>, version<span style="color: #666666">=</span><span style="color: #BA2121">&#39;scalar&#39;</span>):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Vectorized implementation of solver_FE_simple.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    <span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">time</span>
+    t0 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+
+    x <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, L, Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in space</span>
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]
+    dt <span style="color: #666666">=</span> C<span style="color: #666666">*</span>dx<span style="color: #666666">**2/</span>a
+    Nt <span style="color: #666666">=</span> <span style="color: #008000">int</span>(<span style="color: #008000">round</span>(T<span style="color: #666666">/</span><span style="color: #008000">float</span>(dt)))
+    t <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, T, Nt<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in time</span>
+
+    u   <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution array</span>
+    u_1 <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution at t-dt</span>
+    u_2 <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution at t-2*dt</span>
+
+    <span style="color: #408080; font-style: italic"># Set initial condition</span>
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>,Nx<span style="color: #666666">+1</span>):
+        u_1[i] <span style="color: #666666">=</span> I(x[i])
+
+    <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+        user_action(u_1, x, t, <span style="color: #666666">0</span>)
+
+    <span style="color: #008000; font-weight: bold">for</span> n <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nt):
+        <span style="color: #408080; font-style: italic"># Update all inner points</span>
+        <span style="color: #008000; font-weight: bold">if</span> version <span style="color: #666666">==</span> <span style="color: #BA2121">&#39;scalar&#39;</span>:
+            <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">1</span>, Nx):
+                u[i] <span style="color: #666666">=</span> u_1[i] <span style="color: #666666">+</span> C<span style="color: #666666">*</span>(u_1[i<span style="color: #666666">-1</span>] <span style="color: #666666">-</span> <span style="color: #666666">2*</span>u_1[i] <span style="color: #666666">+</span> u_1[i<span style="color: #666666">+1</span>])
+
+        <span style="color: #008000; font-weight: bold">elif</span> version <span style="color: #666666">==</span> <span style="color: #BA2121">&#39;vectorized&#39;</span>:
+            u[<span style="color: #666666">1</span>:Nx] <span style="color: #666666">=</span> u_1[<span style="color: #666666">1</span>:Nx] <span style="color: #666666">+</span>  \
+                      C<span style="color: #666666">*</span>(u_1[<span style="color: #666666">0</span>:Nx<span style="color: #666666">-1</span>] <span style="color: #666666">-</span> <span style="color: #666666">2*</span>u_1[<span style="color: #666666">1</span>:Nx] <span style="color: #666666">+</span> u_1[<span style="color: #666666">2</span>:Nx<span style="color: #666666">+1</span>])
+        <span style="color: #008000; font-weight: bold">else</span>:
+            <span style="color: #008000; font-weight: bold">raise</span> <span style="color: #D2413A; font-weight: bold">ValueError</span>(<span style="color: #BA2121">&#39;version=</span><span style="color: #BB6688; font-weight: bold">%s</span><span style="color: #BA2121">&#39;</span> <span style="color: #666666">%</span> version)
+
+        <span style="color: #408080; font-style: italic"># Insert boundary conditions</span>
+        u[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> <span style="color: #666666">0</span>;  u[Nx] <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+        <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+            user_action(u, x, t, n<span style="color: #666666">+1</span>)
+
+        <span style="color: #408080; font-style: italic"># Switch variables before next step</span>
+        <span style="color: #408080; font-style: italic">#u_1[:] = u  # slow</span>
+        u_1, u <span style="color: #666666">=</span> u, u_1
+
+    t1 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+    <span style="color: #008000; font-weight: bold">return</span> u, x, t, t1<span style="color: #666666">-</span>t0
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">solver_BE_simple</span>(I, a, L, Nx, C, T):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Simplest expression of the computational algorithm</span>
+<span style="color: #BA2121; font-style: italic">    for the Backward Euler method, using explicit Python loops</span>
+<span style="color: #BA2121; font-style: italic">    and a dense matrix format for the coefficient matrix.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    x <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, L, Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in space</span>
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]
+    dt <span style="color: #666666">=</span> C<span style="color: #666666">*</span>dx<span style="color: #666666">**2/</span>a
+    Nt <span style="color: #666666">=</span> <span style="color: #008000">int</span>(<span style="color: #008000">round</span>(T<span style="color: #666666">/</span><span style="color: #008000">float</span>(dt)))
+    t <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, T, Nt<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in time</span>
+    u   <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    u_1 <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+
+    <span style="color: #408080; font-style: italic"># Data structures for the linear system</span>
+    A <span style="color: #666666">=</span> zeros((Nx<span style="color: #666666">+1</span>, Nx<span style="color: #666666">+1</span>))
+    b <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">1</span>, Nx):
+        A[i,i<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> <span style="color: #666666">-</span>C
+        A[i,i<span style="color: #666666">+1</span>] <span style="color: #666666">=</span> <span style="color: #666666">-</span>C
+        A[i,i] <span style="color: #666666">=</span> <span style="color: #666666">1</span> <span style="color: #666666">+</span> <span style="color: #666666">2*</span>C
+    A[<span style="color: #666666">0</span>,<span style="color: #666666">0</span>] <span style="color: #666666">=</span> A[Nx,Nx] <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+
+    <span style="color: #408080; font-style: italic"># Set initial condition u(x,0) = I(x)</span>
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nx<span style="color: #666666">+1</span>):
+        u_1[i] <span style="color: #666666">=</span> I(x[i])
+
+    <span style="color: #008000; font-weight: bold">for</span> n <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nt):
+        <span style="color: #408080; font-style: italic"># Compute b and solve linear system</span>
+        <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">1</span>, Nx):
+            b[i] <span style="color: #666666">=</span> <span style="color: #666666">-</span>u_1[i]
+        b[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> b[Nx] <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+        u[:] <span style="color: #666666">=</span> linalg<span style="color: #666666">.</span>solve(A, b)
+
+        <span style="color: #408080; font-style: italic"># Switch variables before next step</span>
+        u_1, u <span style="color: #666666">=</span> u, u_1
+    <span style="color: #008000; font-weight: bold">return</span> u
+
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">solver_BE</span>(I, a, L, Nx, C, T, user_action<span style="color: #666666">=</span><span style="color: #008000">None</span>):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Vectorized implementation of solver_BE_simple using also</span>
+<span style="color: #BA2121; font-style: italic">    a sparse (tridiagonal) matrix for efficiency.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    <span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">time</span>
+    t0 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+
+    x <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, L, Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in space</span>
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]
+    dt <span style="color: #666666">=</span> C<span style="color: #666666">*</span>dx<span style="color: #666666">**2/</span>a
+    Nt <span style="color: #666666">=</span> <span style="color: #008000">int</span>(<span style="color: #008000">round</span>(T<span style="color: #666666">/</span><span style="color: #008000">float</span>(dt)))
+    t <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, T, Nt<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in time</span>
+
+    u   <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution array at t[n+1]</span>
+    u_1 <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution at t[n]</span>
+
+    <span style="color: #408080; font-style: italic"># Representation of sparse matrix and right-hand side</span>
+    diagonal <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    lower    <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    upper    <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    b        <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    <span style="color: #408080; font-style: italic"># &quot;Active&quot; values: diagonal[:], upper[1:], lower[:-1]</span>
+
+    <span style="color: #408080; font-style: italic"># Precompute sparse matrix</span>
+    diagonal[:] <span style="color: #666666">=</span> <span style="color: #666666">1</span> <span style="color: #666666">+</span> <span style="color: #666666">2*</span>C
+    lower[:] <span style="color: #666666">=</span> <span style="color: #666666">-</span>C  <span style="color: #408080; font-style: italic">#1</span>
+    upper[:] <span style="color: #666666">=</span> <span style="color: #666666">-</span>C  <span style="color: #408080; font-style: italic">#1</span>
+    <span style="color: #408080; font-style: italic"># Insert boundary conditions</span>
+    diagonal[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+    diagonal[Nx] <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+    <span style="color: #408080; font-style: italic"># Remove unused/inactive values</span>
+    upper[<span style="color: #666666">0</span>:<span style="color: #666666">2</span>] <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+    lower[<span style="color: #666666">-2</span>:] <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+
+    diags <span style="color: #666666">=</span> [<span style="color: #666666">0</span>, <span style="color: #666666">-1</span>, <span style="color: #666666">1</span>]
+    A <span style="color: #666666">=</span> spdiags([diagonal, lower, upper], diags, Nx<span style="color: #666666">+1</span>, Nx<span style="color: #666666">+1</span>)
+    <span style="color: #008000; font-weight: bold">print</span> A<span style="color: #666666">.</span>todense()
+
+    <span style="color: #408080; font-style: italic"># Set initial condition</span>
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>,Nx<span style="color: #666666">+1</span>):
+        u_1[i] <span style="color: #666666">=</span> I(x[i])
+
+    <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+        user_action(u_1, x, t, <span style="color: #666666">0</span>)
+
+    <span style="color: #008000; font-weight: bold">for</span> n <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nt):
+        b <span style="color: #666666">=</span> u_1
+        b[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> b[<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> <span style="color: #666666">0.0</span>  <span style="color: #408080; font-style: italic"># boundary conditions</span>
+        u[:] <span style="color: #666666">=</span> spsolve(A, b)
+
+        <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+            user_action(u, x, t, n<span style="color: #666666">+1</span>)
+
+        <span style="color: #408080; font-style: italic"># Switch variables before next step</span>
+        u_1, u <span style="color: #666666">=</span> u, u_1
+
+    t1 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+    <span style="color: #008000; font-weight: bold">return</span> u, x, t, t1<span style="color: #666666">-</span>t0
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">solver_theta</span>(I, a, L, Nx, C, T, theta<span style="color: #666666">=0.5</span>, u_L<span style="color: #666666">=0</span>, u_R<span style="color: #666666">=0</span>,
+                 user_action<span style="color: #666666">=</span><span style="color: #008000">None</span>):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Full solver for the model problem using the theta-rule</span>
+<span style="color: #BA2121; font-style: italic">    difference approximation in time (no restriction on C,</span>
+<span style="color: #BA2121; font-style: italic">    i.e., the time step when theta &gt;= 0.5).</span>
+<span style="color: #BA2121; font-style: italic">    Vectorized implementation and sparse (tridiagonal)</span>
+<span style="color: #BA2121; font-style: italic">    coefficient matrix.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    <span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">time</span>
+    t0 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+
+    x <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, L, Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in space</span>
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]
+    dt <span style="color: #666666">=</span> C<span style="color: #666666">*</span>dx<span style="color: #666666">**2/</span>a
+    Nt <span style="color: #666666">=</span> <span style="color: #008000">int</span>(<span style="color: #008000">round</span>(T<span style="color: #666666">/</span><span style="color: #008000">float</span>(dt)))
+    t <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, T, Nt<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in time</span>
+
+    u   <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution array at t[n+1]</span>
+    u_1 <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution at t[n]</span>
+
+    <span style="color: #408080; font-style: italic"># Representation of sparse matrix and right-hand side</span>
+    diagonal <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    lower    <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    upper    <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    b        <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    <span style="color: #408080; font-style: italic"># &quot;Active&quot; values: diagonal[:], upper[1:], lower[:-1]</span>
+
+    <span style="color: #408080; font-style: italic"># Precompute sparse matrix (scipy format)</span>
+    diagonal[:] <span style="color: #666666">=</span> <span style="color: #666666">1</span> <span style="color: #666666">+</span> <span style="color: #666666">2*</span>Cl
+    lower[:] <span style="color: #666666">=</span> <span style="color: #666666">-</span>Cl  <span style="color: #408080; font-style: italic">#1</span>
+    upper[:] <span style="color: #666666">=</span> <span style="color: #666666">-</span>Cl  <span style="color: #408080; font-style: italic">#1</span>
+    <span style="color: #408080; font-style: italic"># Insert boundary conditions</span>
+    diagonal[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+    diagonal[Nx] <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+    <span style="color: #408080; font-style: italic"># Remove unused/inactive values</span>
+    upper[<span style="color: #666666">0</span>:<span style="color: #666666">2</span>] <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+    lower[<span style="color: #666666">-2</span>:] <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+
+    diags <span style="color: #666666">=</span> [<span style="color: #666666">0</span>, <span style="color: #666666">-1</span>, <span style="color: #666666">1</span>]
+    A <span style="color: #666666">=</span> spdiags([diagonal, lower, upper], diags, Nx<span style="color: #666666">+1</span>, Nx<span style="color: #666666">+1</span>)
+    <span style="color: #408080; font-style: italic">#print A.todense()</span>
+
+    <span style="color: #408080; font-style: italic"># Set initial condition</span>
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>,Nx<span style="color: #666666">+1</span>):
+        u_1[i] <span style="color: #666666">=</span> I(x[i])
+
+    <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+        user_action(u_1, x, t, <span style="color: #666666">0</span>)
+
+    <span style="color: #408080; font-style: italic"># Time loop</span>
+    <span style="color: #008000; font-weight: bold">for</span> n <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nt):
+        b[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> u_1[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">+</span> Cr<span style="color: #666666">*</span>(u_1[:<span style="color: #666666">-2</span>] <span style="color: #666666">-</span> <span style="color: #666666">2*</span>u_1[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">+</span> u_1[<span style="color: #666666">2</span>:])
+        b[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> u_L; b[<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> u_R  <span style="color: #408080; font-style: italic"># boundary conditions</span>
+        u[:] <span style="color: #666666">=</span> spsolve(A, b)
+
+        <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+            user_action(u, x, t, n<span style="color: #666666">+1</span>)
+
+        <span style="color: #408080; font-style: italic"># Switch variables before next step</span>
+        u_1, u <span style="color: #666666">=</span> u, u_1
+
+    t1 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+    <span style="color: #008000; font-weight: bold">return</span> u, x, t, t1<span style="color: #666666">-</span>t0
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">viz</span>(I, a, L, Nx, C, T, umin, umax,
+        scheme<span style="color: #666666">=</span><span style="color: #BA2121">&#39;FE&#39;</span>, animate<span style="color: #666666">=</span><span style="color: #008000">True</span>):
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">plot_u</span>(u, x, t, n):
+        plot(x, u, <span style="color: #BA2121">&#39;r-&#39;</span>, axis<span style="color: #666666">=</span>[<span style="color: #666666">0</span>, L, umin, umax], title<span style="color: #666666">=</span><span style="color: #BA2121">&#39;t=</span><span style="color: #BB6688; font-weight: bold">%f</span><span style="color: #BA2121">&#39;</span> <span style="color: #666666">%</span> t[n])
+        <span style="color: #008000; font-weight: bold">if</span> t[n] <span style="color: #666666">==</span> <span style="color: #666666">0</span>:
+            time<span style="color: #666666">.</span>sleep(<span style="color: #666666">2</span>)
+        <span style="color: #008000; font-weight: bold">else</span>:
+            time<span style="color: #666666">.</span>sleep(<span style="color: #666666">0.2</span>)
+
+    user_action <span style="color: #666666">=</span> plot_u <span style="color: #008000; font-weight: bold">if</span> animate <span style="color: #008000; font-weight: bold">else</span> <span style="color: #008000; font-weight: bold">lambda</span> u,x,t,n: <span style="color: #008000">None</span>
+
+    u, x, t, cpu <span style="color: #666666">=</span> <span style="color: #008000">eval</span>(<span style="color: #BA2121">&#39;solver_&#39;</span><span style="color: #666666">+</span>scheme)\
+                   (I, a, L, Nx, C, T,
+                    user_action<span style="color: #666666">=</span>user_action)
+    <span style="color: #008000; font-weight: bold">return</span> u, cpu
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">plug</span>(scheme<span style="color: #666666">=</span><span style="color: #BA2121">&#39;FE&#39;</span>, C<span style="color: #666666">=0.5</span>, Nx<span style="color: #666666">=50</span>):
+    L <span style="color: #666666">=</span> <span style="color: #666666">1.</span>
+    a <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+    T <span style="color: #666666">=</span> <span style="color: #666666">0.1</span>
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">I</span>(x):
+        <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;Plug profile as initial condition.&quot;&quot;&quot;</span>
+        <span style="color: #008000; font-weight: bold">if</span> <span style="color: #008000">abs</span>(x<span style="color: #666666">-</span>L<span style="color: #666666">/2.0</span>) <span style="color: #666666">&gt;</span> <span style="color: #666666">0.1</span>:
+            <span style="color: #008000; font-weight: bold">return</span> <span style="color: #666666">0</span>
+        <span style="color: #008000; font-weight: bold">else</span>:
+            <span style="color: #008000; font-weight: bold">return</span> <span style="color: #666666">1</span>
+
+    u, cpu <span style="color: #666666">=</span> viz(I, a, L, Nx, C, T,
+                 umin<span style="color: #666666">=-0.1</span>, umax<span style="color: #666666">=1.1</span>,
+                 scheme<span style="color: #666666">=</span>scheme, animate<span style="color: #666666">=</span><span style="color: #008000">True</span>)
+    <span style="color: #008000; font-weight: bold">print</span> <span style="color: #BA2121">&#39;CPU time:&#39;</span>, cpu
+
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    if not allclose(solutions[0], solutions[-1],</span>
+<span style="color: #BA2121; font-style: italic">                    atol=1.0E-10, rtol=1.0E-12):</span>
+<span style="color: #BA2121; font-style: italic">        print &#39;error in computations&#39;</span>
+<span style="color: #BA2121; font-style: italic">    else:</span>
+<span style="color: #BA2121; font-style: italic">        print &#39;correct solution&#39;</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">expsin</span>(scheme<span style="color: #666666">=</span><span style="color: #BA2121">&#39;FE&#39;</span>, C<span style="color: #666666">=0.5</span>, m<span style="color: #666666">=3</span>):
+    L <span style="color: #666666">=</span> <span style="color: #666666">10.0</span>
+    a <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+    T <span style="color: #666666">=</span> <span style="color: #666666">1.2</span>
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">exact</span>(x, t):
+        <span style="color: #008000; font-weight: bold">return</span> exp(<span style="color: #666666">-</span>m<span style="color: #666666">**2*</span>pi<span style="color: #666666">**2*</span>a<span style="color: #666666">/</span>L<span style="color: #666666">**2*</span>t)<span style="color: #666666">*</span>sin(m<span style="color: #666666">*</span>pi<span style="color: #666666">/</span>L<span style="color: #666666">*</span>x)
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">I</span>(x):
+        <span style="color: #008000; font-weight: bold">return</span> exact(x, <span style="color: #666666">0</span>)
+
+    Nx <span style="color: #666666">=</span> <span style="color: #666666">80</span>
+    viz(I, a, L, Nx, C, T, <span style="color: #666666">-1</span>, <span style="color: #666666">1</span>, scheme<span style="color: #666666">=</span>scheme, animate<span style="color: #666666">=</span><span style="color: #008000">True</span>)
+
+    <span style="color: #408080; font-style: italic"># Convergence study</span>
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">action</span>(u, x, t, n):
+        e <span style="color: #666666">=</span> <span style="color: #008000">abs</span>(u <span style="color: #666666">-</span> exact(x, t[n]))<span style="color: #666666">.</span>max()
+        errors<span style="color: #666666">.</span>append(e)
+
+    errors <span style="color: #666666">=</span> []
+    Nx_values <span style="color: #666666">=</span> [<span style="color: #666666">10</span>, <span style="color: #666666">20</span>, <span style="color: #666666">40</span>, <span style="color: #666666">80</span>, <span style="color: #666666">160</span>]
+    <span style="color: #008000; font-weight: bold">for</span> Nx <span style="color: #AA22FF; font-weight: bold">in</span> Nx_values:
+        <span style="color: #008000">eval</span>(<span style="color: #BA2121">&#39;solver_&#39;</span><span style="color: #666666">+</span>scheme)(I, a, L, Nx, C, T, user_action<span style="color: #666666">=</span>action)
+        dt <span style="color: #666666">=</span> C<span style="color: #666666">*</span>(L<span style="color: #666666">/</span>Nx)<span style="color: #666666">**2/</span>a
+        <span style="color: #008000; font-weight: bold">print</span> dt, errors[<span style="color: #666666">-1</span>]
+
+<span style="color: #008000; font-weight: bold">if</span> __name__ <span style="color: #666666">==</span> <span style="color: #BA2121">&#39;__main__&#39;</span>:
+    <span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">sys</span><span style="color: #666666">,</span> <span style="color: #0000FF; font-weight: bold">time</span>
+    <span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">scitools.std</span> <span style="color: #008000; font-weight: bold">import</span> <span style="color: #666666">*</span>
+
+    <span style="color: #008000; font-weight: bold">if</span> <span style="color: #008000">len</span>(sys<span style="color: #666666">.</span>argv) <span style="color: #666666">&lt;</span> <span style="color: #666666">2</span>:
+        <span style="color: #008000; font-weight: bold">print</span> <span style="color: #BA2121">&quot;&quot;&quot;Usage </span><span style="color: #BB6688; font-weight: bold">%s</span><span style="color: #BA2121"> function arg1 arg2 arg3 ...&quot;&quot;&quot;</span> <span style="color: #666666">%</span> sys<span style="color: #666666">.</span>argv[<span style="color: #666666">0</span>]
+        sys<span style="color: #666666">.</span>exit(<span style="color: #666666">0</span>)
+    cmd <span style="color: #666666">=</span> <span style="color: #BA2121">&#39;</span><span style="color: #BB6688; font-weight: bold">%s</span><span style="color: #BA2121">(</span><span style="color: #BB6688; font-weight: bold">%s</span><span style="color: #BA2121">)&#39;</span> <span style="color: #666666">%</span> (sys<span style="color: #666666">.</span>argv[<span style="color: #666666">1</span>], <span style="color: #BA2121">&#39;, &#39;</span><span style="color: #666666">.</span>join(sys<span style="color: #666666">.</span>argv[<span style="color: #666666">2</span>:]))
+    <span style="color: #008000; font-weight: bold">print</span> cmd
+    <span style="color: #008000">eval</span>(cmd)
+</pre></div>
+<p>
+<code>diffu1D_vc.py</code>
+
+<p>
+
+<!-- code=python (from !bc pypro) typeset with pygments style "default" -->
+<div class="highlight" style="background: #f8f8f8"><pre style="line-height: 125%"><span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">Solve the diffusion equation</span>
+
+<span style="color: #BA2121; font-style: italic">    u_t = (a(x)*u_x)_x + f(x,t)</span>
+
+<span style="color: #BA2121; font-style: italic">on (0,L) with boundary conditions u(0,t) = u_L and u(L,t) = u_R,</span>
+<span style="color: #BA2121; font-style: italic">for t in (0,T]. Initial condition: u(x,0) = I(x).</span>
+
+<span style="color: #BA2121; font-style: italic">The following naming convention of variables are used.</span>
+
+<span style="color: #BA2121; font-style: italic">===== ==========================================================</span>
+<span style="color: #BA2121; font-style: italic">Name  Description</span>
+<span style="color: #BA2121; font-style: italic">===== ==========================================================</span>
+<span style="color: #BA2121; font-style: italic">Nx    The total number of mesh cells; mesh points are numbered</span>
+<span style="color: #BA2121; font-style: italic">      from 0 to Nx.</span>
+<span style="color: #BA2121; font-style: italic">C     The dimensionless number a*dt/dx**2, which implicitly</span>
+<span style="color: #BA2121; font-style: italic">      specifies the time step.</span>
+<span style="color: #BA2121; font-style: italic">T     The stop time for the simulation.</span>
+<span style="color: #BA2121; font-style: italic">I     Initial condition (Python function of x).</span>
+<span style="color: #BA2121; font-style: italic">a     Variable coefficient (constant).</span>
+<span style="color: #BA2121; font-style: italic">L     Length of the domain ([0,L]).</span>
+<span style="color: #BA2121; font-style: italic">x     Mesh points in space.</span>
+<span style="color: #BA2121; font-style: italic">t     Mesh points in time.</span>
+<span style="color: #BA2121; font-style: italic">n     Index counter in time.</span>
+<span style="color: #BA2121; font-style: italic">u     Unknown at current/new time level.</span>
+<span style="color: #BA2121; font-style: italic">u_1   u at the previous time level.</span>
+<span style="color: #BA2121; font-style: italic">dx    Constant mesh spacing in x.</span>
+<span style="color: #BA2121; font-style: italic">dt    Constant mesh spacing in t.</span>
+<span style="color: #BA2121; font-style: italic">===== ==========================================================</span>
+
+<span style="color: #BA2121; font-style: italic">``user_action`` is a function of ``(u, x, t, n)``, ``u[i]`` is the</span>
+<span style="color: #BA2121; font-style: italic">solution at spatial mesh point ``x[i]`` at time ``t[n]``, where the</span>
+<span style="color: #BA2121; font-style: italic">calling code can add visualization, error computations, data analysis,</span>
+<span style="color: #BA2121; font-style: italic">store solutions, etc.</span>
+<span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">scipy.sparse</span> <span style="color: #008000; font-weight: bold">import</span> spdiags
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">scipy.sparse.linalg</span> <span style="color: #008000; font-weight: bold">import</span> spsolve, use_solver
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">numpy</span> <span style="color: #008000; font-weight: bold">import</span> linspace, zeros, random
+<span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">time</span><span style="color: #666666">,</span> <span style="color: #0000FF; font-weight: bold">sys</span>
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">solver_theta</span>(I, a, L, Nx, D, T, theta<span style="color: #666666">=0.5</span>, u_L<span style="color: #666666">=1</span>, u_R<span style="color: #666666">=0</span>,
+                 user_action<span style="color: #666666">=</span><span style="color: #008000">None</span>):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    The a variable is an array of length Nx+1 holding the values of</span>
+<span style="color: #BA2121; font-style: italic">    a(x) at the mesh points.</span>
+
+<span style="color: #BA2121; font-style: italic">    Method: (implicit) theta-rule in time.</span>
+
+<span style="color: #BA2121; font-style: italic">    Nx is the total number of mesh cells; mesh points are numbered</span>
+<span style="color: #BA2121; font-style: italic">    from 0 to Nx.</span>
+<span style="color: #BA2121; font-style: italic">    D = dt/dx**2 and implicitly specifies the time step.</span>
+<span style="color: #BA2121; font-style: italic">    T is the stop time for the simulation.</span>
+<span style="color: #BA2121; font-style: italic">    I is a function of x.</span>
+
+<span style="color: #BA2121; font-style: italic">    user_action is a function of (u, x, t, n) where the calling code</span>
+<span style="color: #BA2121; font-style: italic">    can add visualization, error computations, data analysis,</span>
+<span style="color: #BA2121; font-style: italic">    store solutions, etc.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    <span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">time</span>
+    t0 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+
+    x <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, L, Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in space</span>
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]
+    dt <span style="color: #666666">=</span> D<span style="color: #666666">*</span>dx<span style="color: #666666">**2</span>
+    <span style="color: #408080; font-style: italic">#print &#39;dt=%g&#39; % dt</span>
+    Nt <span style="color: #666666">=</span> <span style="color: #008000">int</span>(<span style="color: #008000">round</span>(T<span style="color: #666666">/</span><span style="color: #008000">float</span>(dt)))
+    t <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, T, Nt<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># mesh points in time</span>
+
+    u   <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution array at t[n+1]</span>
+    u_1 <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)   <span style="color: #408080; font-style: italic"># solution at t[n]</span>
+
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Basic formula in the scheme:</span>
+
+<span style="color: #BA2121; font-style: italic">    0.5*(a[i+1] + a[i])*(u[i+1] - u[i]) -</span>
+<span style="color: #BA2121; font-style: italic">    0.5*(a[i] + a[i-1])*(u[i] - u[i-1])</span>
+
+<span style="color: #BA2121; font-style: italic">    0.5*(a[i+1] + a[i])*u[i+1]</span>
+<span style="color: #BA2121; font-style: italic">    0.5*(a[i] + a[i-1])*u[i-1]</span>
+<span style="color: #BA2121; font-style: italic">    -0.5*(a[i+1] + 2*a[i] + a[i-1])*u[i]</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+
+    Dl <span style="color: #666666">=</span> <span style="color: #666666">0.5*</span>D<span style="color: #666666">*</span>theta
+    Dr <span style="color: #666666">=</span> <span style="color: #666666">0.5*</span>D<span style="color: #666666">*</span>(<span style="color: #666666">1-</span>theta)
+
+    <span style="color: #408080; font-style: italic"># Representation of sparse matrix and right-hand side</span>
+    diagonal <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    lower    <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    upper    <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    b        <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    <span style="color: #408080; font-style: italic"># &quot;Active&quot; values: diagonal[:], upper[1:], lower[:-1]</span>
+
+    <span style="color: #408080; font-style: italic"># Precompute sparse matrix (scipy format)</span>
+    diagonal[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> <span style="color: #666666">1</span> <span style="color: #666666">+</span> Dl<span style="color: #666666">*</span>(a[<span style="color: #666666">2</span>:] <span style="color: #666666">+</span> <span style="color: #666666">2*</span>a[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">+</span> a[:<span style="color: #666666">-2</span>])
+    lower[<span style="color: #666666">0</span>:<span style="color: #666666">-2</span>] <span style="color: #666666">=</span> <span style="color: #666666">-</span>Dl<span style="color: #666666">*</span>(a[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">+</span> a[:<span style="color: #666666">-2</span>])
+    upper[<span style="color: #666666">2</span>:]   <span style="color: #666666">=</span> <span style="color: #666666">-</span>Dl<span style="color: #666666">*</span>(a[<span style="color: #666666">2</span>:] <span style="color: #666666">+</span> a[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>])
+    <span style="color: #408080; font-style: italic"># Insert boundary conditions</span>
+    diagonal[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+    diagonal[Nx] <span style="color: #666666">=</span> <span style="color: #666666">1</span>
+
+    diags <span style="color: #666666">=</span> [<span style="color: #666666">0</span>, <span style="color: #666666">-1</span>, <span style="color: #666666">1</span>]
+    A <span style="color: #666666">=</span> spdiags([diagonal, lower, upper], diags, Nx<span style="color: #666666">+1</span>, Nx<span style="color: #666666">+1</span>)
+    <span style="color: #408080; font-style: italic">#print A.todense()</span>
+
+    <span style="color: #408080; font-style: italic"># Set initial condition</span>
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>,Nx<span style="color: #666666">+1</span>):
+        u_1[i] <span style="color: #666666">=</span> I(x[i])
+
+    <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+        user_action(u_1, x, t, <span style="color: #666666">0</span>)
+
+    <span style="color: #408080; font-style: italic"># Time loop</span>
+    <span style="color: #008000; font-weight: bold">for</span> n <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">0</span>, Nt):
+        b[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> u_1[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">+</span> Dr<span style="color: #666666">*</span>(
+            (a[<span style="color: #666666">2</span>:] <span style="color: #666666">+</span> a[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>])<span style="color: #666666">*</span>(u_1[:<span style="color: #666666">-2</span>] <span style="color: #666666">-</span> u_1[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>]) <span style="color: #666666">-</span>
+            (a[<span style="color: #666666">2</span>:] <span style="color: #666666">+</span> a[<span style="color: #666666">0</span>:<span style="color: #666666">-2</span>])<span style="color: #666666">*</span>(u_1[<span style="color: #666666">1</span>:<span style="color: #666666">-1</span>] <span style="color: #666666">-</span> u_1[:<span style="color: #666666">-2</span>]))
+        b[<span style="color: #666666">0</span>] <span style="color: #666666">=</span> u_L; b[<span style="color: #666666">-1</span>] <span style="color: #666666">=</span> u_R  <span style="color: #408080; font-style: italic"># boundary conditions</span>
+        u[:] <span style="color: #666666">=</span> spsolve(A, b)
+
+        <span style="color: #008000; font-weight: bold">if</span> user_action <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000">None</span>:
+            user_action(u, x, t, n<span style="color: #666666">+1</span>)
+
+        <span style="color: #408080; font-style: italic"># Switch variables before next step</span>
+        u_1, u <span style="color: #666666">=</span> u, u_1
+
+    t1 <span style="color: #666666">=</span> time<span style="color: #666666">.</span>clock()
+    <span style="color: #008000; font-weight: bold">return</span> u, x, t, t1<span style="color: #666666">-</span>t0
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">viz</span>(I, a, L, Nx, D, T, umin, umax, theta, u_L, u_R,
+        animate<span style="color: #666666">=</span><span style="color: #008000">True</span>):
+
+    <span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">scitools.std</span> <span style="color: #008000; font-weight: bold">import</span> plot
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">plot_u</span>(u, x, t, n):
+        plot(x, u, <span style="color: #BA2121">&#39;r-&#39;</span>, axis<span style="color: #666666">=</span>[<span style="color: #666666">0</span>, L, umin, umax], title<span style="color: #666666">=</span><span style="color: #BA2121">&#39;t=</span><span style="color: #BB6688; font-weight: bold">%f</span><span style="color: #BA2121">&#39;</span> <span style="color: #666666">%</span> t[n])
+        <span style="color: #008000; font-weight: bold">if</span> t[n] <span style="color: #666666">==</span> <span style="color: #666666">0</span>:
+            time<span style="color: #666666">.</span>sleep(<span style="color: #666666">3</span>)
+        <span style="color: #008000; font-weight: bold">else</span>:
+            time<span style="color: #666666">.</span>sleep(<span style="color: #666666">0.5</span>)
+
+    user_action <span style="color: #666666">=</span> plot_u <span style="color: #008000; font-weight: bold">if</span> animate <span style="color: #008000; font-weight: bold">else</span> <span style="color: #008000; font-weight: bold">lambda</span> u,x,t,n: <span style="color: #008000">None</span>
+
+    u, x, t, cpu <span style="color: #666666">=</span> solver_theta(
+        I, a, L, Nx, D, T, theta, u_L, u_R, user_action<span style="color: #666666">=</span>user_action)
+    <span style="color: #008000; font-weight: bold">return</span> u, x, cpu
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">fill_a</span>(a_consts, L, Nx):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    *a_consts*: ``[[x0, a0], [x1, a1], ...]`` is a</span>
+<span style="color: #BA2121; font-style: italic">    piecewise constant function taking the value ``a0`` in ``[x0,x1]``,</span>
+<span style="color: #BA2121; font-style: italic">    ``a1`` in ``[x1,x2]``, and so forth.</span>
+
+<span style="color: #BA2121; font-style: italic">    Return a finite difference function ``a`` on a uniform mesh with</span>
+<span style="color: #BA2121; font-style: italic">    Nx+1 points in [0, L] where the function takes on the piecewise</span>
+<span style="color: #BA2121; font-style: italic">    constant values of *a_const*. That is,</span>
+
+<span style="color: #BA2121; font-style: italic">    ``a[i] = a_consts[s][1]`` if ``x[i]`` is in subdomain</span>
+<span style="color: #BA2121; font-style: italic">    ``[a_consts[s][0], a_consts[s+1][0]]``.</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    a <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)
+    x <span style="color: #666666">=</span> linspace(<span style="color: #666666">0</span>, L, Nx<span style="color: #666666">+1</span>)
+    s <span style="color: #666666">=</span> <span style="color: #666666">0</span>  <span style="color: #408080; font-style: italic"># subdomain counter</span>
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #008000">len</span>(x)):
+        <span style="color: #008000; font-weight: bold">if</span> s <span style="color: #666666">&lt;</span> <span style="color: #008000">len</span>(a_consts)<span style="color: #666666">-1</span> <span style="color: #AA22FF; font-weight: bold">and</span> x[i] <span style="color: #666666">&gt;</span> a_consts[s<span style="color: #666666">+1</span>][<span style="color: #666666">0</span>]:
+            s <span style="color: #666666">+=</span> <span style="color: #666666">1</span>
+        a[i] <span style="color: #666666">=</span> a_consts[s][<span style="color: #666666">1</span>]
+    <span style="color: #008000; font-weight: bold">return</span> a
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">u_exact_stationary</span>(x, a, u_L, u_R):
+    <span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;</span>
+<span style="color: #BA2121; font-style: italic">    Return stationary solution of a 1D variable coefficient</span>
+<span style="color: #BA2121; font-style: italic">    Laplace equation: (a(x)*v&#39;(x))&#39;=0, v(0)=u_L, v(L)=u_R.</span>
+
+<span style="color: #BA2121; font-style: italic">    v(x) = u_L + (u_R-u_L)*(int_0^x 1/a(c)dc / int_0^L 1/a(c)dc)</span>
+<span style="color: #BA2121; font-style: italic">    &quot;&quot;&quot;</span>
+    Nx <span style="color: #666666">=</span> x<span style="color: #666666">.</span>size <span style="color: #666666">-</span> <span style="color: #666666">1</span>
+    g <span style="color: #666666">=</span> zeros(Nx<span style="color: #666666">+1</span>)    <span style="color: #408080; font-style: italic"># integral of 1/a from 0 to x</span>
+    dx <span style="color: #666666">=</span> x[<span style="color: #666666">1</span>] <span style="color: #666666">-</span> x[<span style="color: #666666">0</span>]   <span style="color: #408080; font-style: italic"># assumed constant</span>
+    i <span style="color: #666666">=</span> <span style="color: #666666">0</span>
+    g[i] <span style="color: #666666">=</span> <span style="color: #666666">0.5*</span>dx<span style="color: #666666">/</span>a[i]
+    <span style="color: #008000; font-weight: bold">for</span> i <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">range</span>(<span style="color: #666666">1</span>, Nx):
+        g[i] <span style="color: #666666">=</span> g[i<span style="color: #666666">-1</span>] <span style="color: #666666">+</span> dx<span style="color: #666666">/</span>a[i]
+    i <span style="color: #666666">=</span> Nx
+    g[i] <span style="color: #666666">=</span> g[i<span style="color: #666666">-1</span>] <span style="color: #666666">+</span> <span style="color: #666666">0.5*</span>dx<span style="color: #666666">/</span>a[i]
+    v <span style="color: #666666">=</span> u_L <span style="color: #666666">+</span> (u_R <span style="color: #666666">-</span> u_L)<span style="color: #666666">*</span>g<span style="color: #666666">/</span>g[<span style="color: #666666">-1</span>]
+    <span style="color: #008000; font-weight: bold">return</span> v
+</pre></div>
+<p>
+
+<!-- ------------------- end of main content --------------- -->
+
+
+</body>
+</html>
+    
+

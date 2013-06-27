@@ -35,16 +35,7 @@ $\Delta x = (b-a)/N_x$.
 
 The relevant vectorized Python code becomes
 
-!bc pycod
-import numpy as np
-x = np.linspace(0, L, Nx+1)  # mesh
-dx = x[1] - x[0]
-f_values = f(x)
-# Adjust weight at the end points
-f_values[0] /= 2.
-f_values[-1] /= 2.
-I = dx*np.sum(f_values)
-!ec
+@@@CODE src-petsc4py/py/trapezoidal.py def trapezoidal_vec@import nose
 
 We now divide the mesh points among the processors.
 Each processor must sum its function values. The processors holding
@@ -58,22 +49,23 @@ must collect the partial sums and form the final sum.
 Given discrete values $f(x_i)$ of a function $f(x)$ at mesh points
 $x_i=i\Delta x$, $i=0,\ldots,N_x$, we want to approximate
 the derivative $df/dx$ at the interior mesh points, $f'(x_i)$,
-$i=1,\ldots,N_x-1$, by a
+$i=1,\ldots,N_x-1$, by a centered
 finite difference:
 
 !bt
-\[ f'(x_i) = \frac{f(x_{i+1}) - f(x_{i-1})}{2\Delta x}\]
+\[ f'(x_i) = \frac{f(x_{i+1}) - f(x_{i-1})}{2\Delta x}.\]
+!et
+At the end points we use one-sided differences:
+
+!bt
+\[ f'(x_0) = \frac{f(x_{1}) - f(x_{0})}{\Delta x},
+\quad f'(x_{N_x}) = \frac{f(x_{N_x}) - f(x_{N_x-1})}{\Delta x} .\]
 !et
 
-This is easy in NumPy:
 
-!bc pycod
-import numpy as np
-x = np.linspace(0, L, Nx+1)  # mesh
-dx = x[1] - x[0]
-f_values = f(x)
-dfdx = (f_values[1:] - f_values[:-1])/(2*dx)
-!ec
+This is easily done in NumPy:
+
+@@@CODE src-petsc4py/py/differentiate.py def differentiate_vec@import nose
 
 Assume $N_x$ is large and that we divide the mesh among processors.
 Think of $N_x=10$ and three processors: processor 0 has $x_0$, $x_1$, $x_2$;
@@ -169,8 +161,8 @@ points, more precisely
 
 `diffu1D_v1.py`
 
-@@@CODE src-petsc4py/diffu1D_v1.py
+@@@CODE src-petsc4py/py/diffu1D_v1.py
 
 `diffu1D_vc.py`
 
-@@@CODE src-petsc4py/diffu1D_vc.py
+@@@CODE src-petsc4py/py/diffu1D_vc.py
