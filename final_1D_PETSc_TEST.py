@@ -1,7 +1,3 @@
-# Run using e.g.:   (Stausland)
-# /usr/lib64/openmpi/1.4-gcc/bin/mpirun -np 1 python2.6 final_1D_PETSc_TEST.py -ksp_type cg -pc_type  -Nx 100 -T 0.5
-# /usr/lib64/openmpi/1.4-gcc/bin/mpirun -np 1 python2.6 final_1D_PETSc_TEST.py -ksp_type cg -pc_type none -Nx 200 -draw
-
 from final_1D_PETSc import solver_FE_MAT_PETSc, solver_FE_MATfree_PETSc, solver_BE_PETSc
 # Import and initialize
 import petsc4py, sys, time

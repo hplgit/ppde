@@ -1,7 +1,3 @@
-# Run using e.g.:   (Stausland)
-# /usr/lib64/openmpi/1.4-gcc/bin/mpirun -np 1 python2.6 final_2D_BE_PETSc_TEST.py -ksp_type cg -pc_type  -Nx 100 -T 0.5
-# /usr/lib64/openmpi/1.4-gcc/bin/mpirun -np 2 python2.6 final_2D_BE_PETSc_TEST.py -ksp_type cg -pc_type none -Nx 200 -Ny 100 -T 0.02
-
 from final_2D_BE_PETSc import solver_2D_BE_PETSc
 # Import and initialize
 import petsc4py, sys, time, math

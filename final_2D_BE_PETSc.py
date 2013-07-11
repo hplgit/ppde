@@ -102,13 +102,12 @@ def solver_2D_BE_PETSc(I, a, Lx, Ly, Nx, Ny, Cx, Cy, T):
 		# command-line options.
 		ksp.solve(u_1,u)
 		
-		# Could we prevent hard-copying here?
-		u.copy(u_1)
+		# Swap
+		u, u_1 = u_1, u
 		
 		# Update if writing to file.
 		if PETSc.Options().getBool('toFile',default=False):
 			u_1.view(W)
-	
 	
 	return u_1, time.clock()-t0
 
