@@ -18,8 +18,8 @@ parallel programming and yet achieves very high performance on
 parallel computing platforms.
 
 The `petsc4py` package is a Python interface to PETSc, which makes it
-easy to parallelize vector and matrix operations, as well as linear and
-nonlinear systems solution, in Python programs.
+easy to parallelize vector and matrix operations, as well as call up
+linear and nonlinear systems solvers, in Python programs.
 
 ===== Parallelizing integration =====
 
