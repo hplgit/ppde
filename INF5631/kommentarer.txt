@@ -1,0 +1,28 @@
+* Final_1D_PETSc:
+Det er tre løsere: en forward med matriser, en uten matriser og en backward med matriser. Den matriseløse bruker advance*-funksjoner og det kan sikkert gjenbrukes cython-kode. Siden jeg nå er over de to og en halv ukene med arbeid så har jeg valgt å ikke gjøre noe mer med Cython. Det er to advance-funksjoner: en skalar og en vektor. Merk at det kan plottes med PETSc enkle plotterutiner selv i parallell (bruk -draw fra kommandolinjen når programmet kjøres). Dette har jeg brukt til å validere.
+
+* Final_2D_BE_PETSc:
+Ganske lik 1D-versjonen, men den har altså bare en implisitt løser. Jeg fulgte lenkene gitt i starten av programmet til å få dette på en Ax=b-form, og jeg har brukt fremgangsmåten med Nx, ikke Nx+1 som jeg så du brukte i 1D-eksemplene. Jeg prøvde å gjøre om til Nx+1, men det ble bare surr. Jeg har ikke vært borti dette med 2D-systemer i et Ax=b-format. Det ser heller ikke riktig ut om ikke systemet er kvadratisk fant jeg ut. Jeg tipper det har noe med matrisen å gjøre, uten å vite det sikkert. Jeg fikk noen diagonale bølger som så veldig feil ut. Jeg har skrevet løsningsvektoren til fil og plottet i Matlab, 2D-plotting i PETSc ville jeg ikke forsøke å prøve på en gang (vet ikke om det er mulig).
+
+* integdiff:
+Disse er ganske greie, og kommentarer er ikke nødvendig vil jeg tro. De likner ganske mye på eksemplene dine som ligger på Git, og vil være copypaste (min mening hvertfall).
+
+Du er flinkere til å kommentere og skrive testprogrammer enn meg, men testprogrammene fungerer nå hvertfall. Jeg har ikke brukt symbolske funksjoner her i det hele tatt, kun Numpy-arrays frem og tilbake.
+
+
+Jeg har testet programmene litt, og 1D-programmet må kjøres på noen tusen punkter for å få ut noe særlig parallelitet. Dette er en av kjøringene jeg testet med (tallet til høyre er rank, og til venstre er tiden det tok):
+
+[chrits@korona ppde_chris]$ /usr/lib64/openmpi/1.4-gcc/bin/mpirun -np 1 python2.6 final_1D_PETSc_TEST.py -Nx 3000 -T 0.05
+0               570.42
+[chrits@korona ppde_chris]$ /usr/lib64/openmpi/1.4-gcc/bin/mpirun -np 8 python2.6 final_1D_PETSc_TEST.py -Nx 3000 -T 0.05
+3               259.36
+6               259.35
+0               259.35
+1               259.36
+2               259.36
+4               259.36
+5               259.35
+7               259.36
+
+
+For små Nx fikk jeg en svak økning i tid for flere prosesser. Men dette er jo du vant til, parallelle programmer krever jo overhead såklart. Commandline-options med PETSc var en veldig fin ting fant jeg ut etterhvert, og jeg baserte programmene på det. Det kan jo være litt uvant for studentene i 5620 muligens, men det er samtidig en av de store styrkene til PETSc, særlig med tanke på -ksp_type og -pc_type. Jeg testet programmene mine i parallel med '-ksp_type cg -pc_type none' og i seriell med litt diverse, bl.a. '-ksp_type preonly -pc_type lu'.
