@@ -26,3 +26,17 @@ Jeg har testet programmene litt, og 1D-programmet må kjøres på noen tusen pun
 
 
 For små Nx fikk jeg en svak økning i tid for flere prosesser. Men dette er jo du vant til, parallelle programmer krever jo overhead såklart. Commandline-options med PETSc var en veldig fin ting fant jeg ut etterhvert, og jeg baserte programmene på det. Det kan jo være litt uvant for studentene i 5620 muligens, men det er samtidig en av de store styrkene til PETSc, særlig med tanke på -ksp_type og -pc_type. Jeg testet programmene mine i parallel med '-ksp_type cg -pc_type none' og i seriell med litt diverse, bl.a. '-ksp_type preonly -pc_type lu'.
+
+-------
+
+Jeg endte opp med først å titte på noen av eksemplene i de Powerpoint-presentasjonene jeg fikk av deg. Denne presentasjonen var det som gjorde at det løsnet for meg:
+https://www.tacc.utexas.edu/c/document_library/get_file?uuid=c2de5a2a-8e08-4f6e-8d49-2086681520d1&groupId=13601
+Fra slide #14 og utover er det noen fine eksempler. Jeg satt meg inn i eksemplene og skjønte strukturen, det var rimelig enkelt.
+
+Derfra så brukte jeg en veldig fin kombinasjon av de to dokumentasjonene til PETSc og petsc4py:
+* http://www.mcs.anl.gov/petsc/petsc-as/documentation/
+* http://pythonhosted.org/petsc4py/apiref/index.html
+
+PETSc-dokumentasjonen var veldig fint og fyldig beskrevet. Jeg fant ut hvilken PETSc-funksjon jeg ville bruke, så gikk jeg inn og leste hvordan den fungerte i C. Så fant jeg den tilsvarende funksjonen i Python og så syntaken til den. Syntaksen er veldig, veldig lik, og det tror jeg de fleste studentene vil oppdage.
+
+Når det gjelder kommandolinjeargumenter så ser jeg at jeg har brukt egne argumenter og brukt sys.argv, men jeg gikk ganske fort bort fra det. Petsc4py har eget opplegg for det, hvor man bruker syntaksen med f.eks. "-ksp_type <type>", men man kan fint legge inn egne argumenter med den syntaken, som f.eks. -plotte_med_egen_funksjon true. Da henter man ut argumentet (og kan sette default om det ikke spesifiseres i kommandolinjen likevel) gjennom petsc4py ved f.eks. "a = PETSc.Options().getBool('plotte_med_egen_funksjon',default=false)". Typene er her: http://pythonhosted.org/petsc4py/apiref/petsc4py.PETSc.Options-class.html
